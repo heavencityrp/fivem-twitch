@@ -34,7 +34,7 @@
 
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const channel = (urlParams.get('channel') || 'random_gtv').trim();
+        const channel = (urlParams.get('channel') || 'asaulter98').trim();
         const initialVolume = parseInt(urlParams.get('volume') || '30', 10);
         const isInitiallyMuted = urlParams.get('muted') === 'true' || initialVolume <= 0;
         let currentQuality = (urlParams.get('quality') || '160p').trim().toLowerCase();

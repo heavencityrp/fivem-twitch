@@ -34,20 +34,36 @@
         // Parse URL parameters passed by FiveM NUI
         const urlParams = new URLSearchParams(window.location.search);
         const channel = (urlParams.get('channel') || 'random_gtv').trim();
-        const muted = urlParams.get('muted') === 'true'; // Starts unmuted if false
+        const muted = urlParams.get('muted') === 'true'; // false if unmuted
+        const nuiParent = urlParams.get('parent') || 'cfx-nui-twitch';
 
-        // Current domain of this GitHub Pages site (e.g. heavencityrp.github.io)
+        // Current domain of this GitHub Pages site
         const hostDomain = window.location.hostname || 'heavencityrp.github.io';
 
-        // Construct clean parent parameter list matching this host
-        let parentParams = `parent=${encodeURIComponent(hostDomain)}`;
-        if (hostDomain !== 'heavencityrp.github.io') {
-            parentParams += `&parent=heavencityrp.github.io`;
-        }
-        parentParams += `&parent=localhost&parent=127.0.0.1`;
+        // Construct complete parent list to satisfy Chromium CSP frame-ancestors for ALL ancestor frames:
+        // 1. hostDomain (heavencityrp.github.io)
+        // 2. FiveM NUI root (cfx-nui-twitch)
+        // 3. Fallbacks
+        const parents = [
+            hostDomain,
+            nuiParent,
+            'cfx-nui-twitch',
+            'localhost',
+            '127.0.0.1'
+        ];
+
+        // Deduplicate while maintaining order
+        const uniqueParents = [];
+        parents.forEach(p => {
+            if (p && !uniqueParents.includes(p.toLowerCase())) {
+                uniqueParents.push(p.toLowerCase());
+            }
+        });
+
+        const parentQuery = uniqueParents.map(p => `parent=${encodeURIComponent(p)}`).join('&');
 
         // Direct Twitch Player embed URL
-        const embedUrl = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&${parentParams}&autoplay=true&muted=${muted}`;
+        const embedUrl = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&${parentQuery}&autoplay=true&muted=${muted}`;
 
         console.log("[Wrapper] Loading Twitch stream:", embedUrl);
 

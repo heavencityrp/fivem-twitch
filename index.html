@@ -7,6 +7,8 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>HeavenCityRP Twitch Stream Wrapper</title>
+    <!-- Twitch Interactive Player API -->
+    <script src="https://player.twitch.tv/js/embed/v1.js"></script>
     <style>
         * {
             margin: 0;
@@ -20,10 +22,10 @@
             height: 100%;
         }
         iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-            display: block;
+            width: 100% !important;
+            height: 100% !important;
+            border: none !important;
+            display: block !important;
         }
     </style>
 </head>
@@ -33,25 +35,147 @@
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const channel = (urlParams.get('channel') || 'random_gtv').trim();
-        const muted = urlParams.get('muted') === 'true';
+        const initialVolume = parseInt(urlParams.get('volume') || '30', 10);
+        const isInitiallyMuted = urlParams.get('muted') === 'true' || initialVolume <= 0;
+        let currentQuality = (urlParams.get('quality') || '160p').trim().toLowerCase();
 
-        // When loaded in FiveM DUI, host is heavencityrp.github.io
+        // When loaded via CreateDui, top-level host is heavencityrp.github.io
         const host = window.location.hostname || 'heavencityrp.github.io';
 
-        // Twitch Parent security parameters
-        const embedUrl = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(host)}&parent=localhost&parent=127.0.0.1&autoplay=true&muted=${muted}`;
+        // Initialize Twitch Player via official JS API
+        const options = {
+            width: "100%",
+            height: "100%",
+            channel: channel,
+            parent: [host, "localhost", "127.0.0.1"],
+            autoplay: true,
+            muted: isInitiallyMuted
+        };
 
-        console.log("[Wrapper] Loading Twitch stream:", embedUrl);
+        let player = null;
+        let hasQualityLocked = false;
 
-        const container = document.getElementById('player-container');
-        const iframe = document.createElement('iframe');
-        iframe.src = embedUrl;
-        iframe.setAttribute('allowfullscreen', 'true');
-        iframe.setAttribute('scrolling', 'no');
-        iframe.setAttribute('frameborder', '0');
-        iframe.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
+        try {
+            player = new Twitch.Player("player-container", options);
+        } catch (err) {
+            console.error("[Wrapper] Failed to initialize Twitch.Player:", err);
+        }
 
-        container.appendChild(iframe);
+        // Apply stream quality (forces 160p if configured)
+        function applyQuality(targetQuality) {
+            if (!player || typeof player.getQualities !== 'function') return;
+
+            try {
+                const qualities = player.getQualities();
+                if (!qualities || qualities.length === 0) return;
+
+                console.log("[Wrapper] Available stream qualities:", JSON.stringify(qualities));
+
+                if (targetQuality === "160p" || targetQuality === "lowest") {
+                    // Try to find exact 160p group (e.g., "160p30" or "160p")
+                    let qMatch = qualities.find(q => q.group && q.group.toLowerCase().includes("160"));
+                    if (!qMatch) {
+                        // Fallback to the lowest available resolution
+                        const validQualities = qualities.filter(q => q.group && q.group !== "auto");
+                        if (validQualities.length > 0) {
+                            qMatch = validQualities[validQualities.length - 1];
+                        }
+                    }
+
+                    if (qMatch) {
+                        player.setQuality(qMatch.group);
+                        hasQualityLocked = true;
+                        console.log("[Wrapper] Stream quality successfully locked to:", qMatch.group);
+                    }
+                } else if (targetQuality && targetQuality !== "auto") {
+                    const match = qualities.find(q => q.group && q.group.toLowerCase().includes(targetQuality));
+                    if (match) {
+                        player.setQuality(match.group);
+                        hasQualityLocked = true;
+                        console.log("[Wrapper] Stream quality set to:", match.group);
+                    }
+                } else if (targetQuality === "auto") {
+                    player.setQuality("auto");
+                    hasQualityLocked = true;
+                    console.log("[Wrapper] Stream quality set to auto");
+                }
+            } catch (e) {
+                console.error("[Wrapper] Error setting quality:", e);
+            }
+        }
+
+        if (player) {
+            // Volume initialization on READY
+            player.addEventListener(Twitch.Player.READY, () => {
+                console.log("[Wrapper] Twitch Player READY. Applying initial volume:", initialVolume);
+                player.setVolume(initialVolume / 100);
+                if (isInitiallyMuted) {
+                    player.setMuted(true);
+                } else {
+                    player.setMuted(false);
+                }
+            });
+
+            // Quality locking on PLAYING
+            player.addEventListener(Twitch.Player.PLAYING, () => {
+                if (!hasQualityLocked) {
+                    applyQuality(currentQuality);
+                }
+            });
+        }
+
+        // Periodic quality enforcement check during initial 15 seconds
+        let qualityChecks = 0;
+        const qualityCheckTimer = setInterval(() => {
+            qualityChecks++;
+            if (hasQualityLocked || qualityChecks > 15) {
+                clearInterval(qualityCheckTimer);
+                return;
+            }
+            applyQuality(currentQuality);
+        }, 1000);
+
+        // ========================================================
+        // Listen for SendDuiMessage from FiveM Client Lua
+        // ========================================================
+        window.addEventListener('message', (event) => {
+            let data = event.data;
+            if (typeof data === 'string') {
+                try { data = JSON.parse(data); } catch (e) {}
+            }
+            if (!data || !data.action) return;
+
+            console.log("[Wrapper] Received message from FiveM:", JSON.stringify(data));
+
+            // Dynamic Volume Adjustment (Real-time Slider updates)
+            if (data.action === "setVolume" && data.volume !== undefined) {
+                const vol = Math.max(0, Math.min(100, parseInt(data.volume, 10)));
+                if (player) {
+                    player.setVolume(vol / 100);
+                    if (vol <= 0) {
+                        player.setMuted(true);
+                    } else {
+                        player.setMuted(false);
+                    }
+                    console.log("[Wrapper] Volume adjusted to:", vol, "%");
+                }
+            }
+
+            // Dynamic Quality Change
+            if (data.action === "setQuality" && data.quality) {
+                currentQuality = data.quality.trim().toLowerCase();
+                hasQualityLocked = false;
+                applyQuality(currentQuality);
+            }
+
+            // Dynamic Channel Change
+            if (data.action === "setChannel" && data.channel) {
+                hasQualityLocked = false;
+                if (player) {
+                    player.setChannel(data.channel.trim());
+                }
+            }
+        });
     </script>
 </body>
 </html>

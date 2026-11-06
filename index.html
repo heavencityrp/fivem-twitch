@@ -38,7 +38,7 @@
     <script>
         const urlParams = new URLSearchParams(window.location.search);
 
-        // Platform detection: "twitch" or "youtube"
+        // Platform detection: "twitch" or "youtube" (defaults to YouTube if opened directly)
         let platform = (urlParams.get('platform') || '').trim().toLowerCase();
         const rawChannel = (urlParams.get('channel') || '').trim();
         const rawId = (urlParams.get('id') || urlParams.get('videoId') || '').trim();
@@ -46,8 +46,11 @@
         if (!platform) {
             if (rawId) {
                 platform = 'youtube';
-            } else {
+            } else if (rawChannel) {
                 platform = 'twitch';
+            } else {
+                // Default when opened in browser without query parameters:
+                platform = 'youtube';
             }
         }
 
@@ -129,12 +132,12 @@
             const loopParam = isLoopEnabled ? `&loop=1&playlist=${videoId}` : '';
             const muteParam = isInitiallyMuted ? '&mute=1' : '';
 
-            // Set origin host based on execution environment
+            // Use official www.youtube.com domain so YouTube counts views & concurrent live stream viewers
             const originHost = (window.location.origin && window.location.origin.startsWith('http'))
                 ? window.location.origin
-                : 'https://www.youtube-nocookie.com';
+                : 'https://www.youtube.com';
 
-            ytIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=0&disablekb=1&fs=0&modestbranding=1&rel=0&iv_load_policy=3${loopParam}${muteParam}&origin=${encodeURIComponent(originHost)}`;
+            ytIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=0&disablekb=1&fs=0&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3${loopParam}${muteParam}&origin=${encodeURIComponent(originHost)}&widget_referrer=${encodeURIComponent(originHost)}`;
 
             container.appendChild(ytIframe);
 
@@ -284,7 +287,7 @@
         // ROUTE INITIALIZATION
         // ========================================================
         if (platform === 'youtube') {
-            const ytId = extractYouTubeId(rawId || rawChannel || 'dQw4w9WgXcQ');
+            const ytId = extractYouTubeId(rawId || rawChannel || 'jkc9wtyYWDA');
             initYouTube(ytId);
         } else {
             const twChannel = (rawChannel || rawId || 'asaulter98').trim();
